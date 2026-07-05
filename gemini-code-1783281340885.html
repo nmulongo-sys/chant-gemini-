@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chant & Justesse</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f4f9; --text-color: #333; --primary-color: #4a90e2; 
+            --secondary-color: #e24a4a; --border-color: #ddd;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: var(--font-family); background-color: var(--bg-color); color: var(--text-color); display: flex; flex-direction: column; height: 100vh; }
+        nav { display: flex; background-color: #fff; border-bottom: 1px solid var(--border-color); overflow-x: auto; flex-shrink: 0; }
+        .tab-btn { flex: 1; padding: 15px 10px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 1rem; font-weight: bold; color: #666; cursor: pointer; white-space: nowrap; transition: all 0.3s ease; }
+        .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+        .view { display: none; flex: 1; padding: 20px; overflow-y: auto; }
+        .view.active { display: flex; flex-direction: column; }
+        .control-group { margin-bottom: 15px; }
+        textarea#abc-input { width: 100%; height: 120px; padding: 10px; font-family: monospace; border: 1px solid var(--border-color); border-radius: 5px; resize: vertical; margin-bottom: 10px; }
+        #paper { background-color: #fff; border: 1px solid var(--border-color); border-radius: 5px; padding: 10px; overflow-x: auto; overflow-y: auto; min-height: 150px; }
+        h2 { margin-bottom: 15px; font-size: 1.5rem; }
+        .engine-panel { background: #eef2f7; border: 1px solid #cdd6e0; border-radius: 5px; padding: 10px; margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; font-size: 0.9rem; }
+        .btn-small { padding: 4px 8px; border: 1px solid #ccc; background: #fff; border-radius: 3px; cursor: pointer; }
+        .btn-small:active { background: #eee; }
+        .btn-mic { padding: 8px 12px; border: none; background: var(--primary-color); color: white; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+        .btn-mic.listening { background: var(--secondary-color); animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        .abcjs-highlight { fill: var(--primary-color) !important; }
+        .abcjs-highlight tspan, .abcjs-highlight path { fill: var(--primary-color) !important; stroke: var(--primary-color) !important; }
+        
+        /* Styles pour la liste d'enregistrement */
+        .studio-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; }
+        .studio-item:last-child { border-bottom: none; }
+        .status-badge { font-size: 0.8rem; padding: 3px 8px; border-radius: 12px; background: #eee; color: #666; }
+        .status-badge.ok { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <button class="tab-btn" onclick="switchTab('partition')">Partition</button>
+        <button class="tab-btn" onclick="switchTab('ecoute')">Écoute</button>
+        <button class="tab-btn" onclick="switchTab('chant')">Chant</button>
+        <button class="tab-btn active" onclick="switchTab('studio')">Studio</button>
+        <button class="tab-btn" onclick="switchTab('bibliotheque')">Biblio</button>
+    </nav>
+
+    <div id="view-partition" class="view">
+        <!-- Contenu masqué pour l'instant (inchangé en JS) -->
+        <h2>Éditeur & Rendu ABC</h2>
+        <textarea id="abc-input" style="display:none;">X: 1
+T: Gamme
+M: 4/4
+L: 1/4
+K: C
+C D E F |]</textarea>
+        <div class="engine-panel" style="display:none;">
+            <select id="clef-mode"><option value="auto">Auto</option></select>
+            <span id="manual-octave-display">0</span>
+            <div id="engine-status"></div>
+        </div>
+        <div id="paper"></div>
+    </div>
+
+    <div id="view-ecoute" class="view">
+        <h2>Mode Écoute</h2>
+        <div class="control-group" style="text-align: center;">
+            <button id="btn-play" class="btn-mic" onclick="startPlayback()">▶ Lecture</button>
+            <button id="btn-stop" class="btn-mic" onclick="stopPlayback()">⏹ Stop</button>
+            <span id="tempo-display">120</span>
+        </div>
+    </div>
+
+    <div id="view-studio" class="view active">
+        <h2>Studio Personnel</h2>
+        
+        <div class="control-group" style="background: #fff; padding: 15px; border-radius: 5px; border: 1px solid var(--border-color); margin-bottom: 20px;">
+            <h3>1. Ma Tessiture</h3>
+            <div style="display: flex; gap: 20px; align-items: flex-end; margin-top: 15px;">
+                <div><label>Min</label><select id="note-min" style="padding: 8px; width: 120px;"></select></div>
+                <div><label>Max</label><select id="note-max" style="padding: 8px; width: 120px;"></select></div>
+            </div>
+            <p id="tessiture-summary" style="font-weight: bold; color: var(--primary-color); margin-top: 10px;"></p>
+        </div>
+
+        <div class="control-group" style="background: #fff; padding: 15px; border-radius: 5px; border: 1px solid var(--border-color);">
+            <h3>2. Kit Vocal (<span id="db-status" style="font-size:0.9rem; color:#666;">Connexion DB...</span>)</h3>
+            <p style="font-size: 0.9rem; color: #666; margin-bottom: 15px;">
+                Enregistrez votre voix pour chaque note. Le séquenceur l'utilisera en priorité.
+            </p>
+            <div id="studio-recording-list" style="border: 1px solid #eee; border-radius: 5px; max-height: 400px; overflow-y: auto;">
+                <!-- Liste générée par JS -->
+            </div>
+        </div>
+    </div>
+
+    <div id="view-chant" class="view"><h2>Mode Chant</h2></div>
+    <div id="view-bibliotheque" class="view"><h2>Bibliothèque</h2></div>
+
+    <script>
+        // --- Navigation ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            document.getElementById('view-' + tabId).classList.add('active');
+        }
+
+        // --- Utilitaires ---
+        const noteNames = ["Do", "Do#", "Ré", "Ré#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"];
+        function midiToNoteName(midiNumber) {
+            return `${noteNames[midiNumber % 12]}${Math.floor(midiNumber / 12) - 1}`;
+        }
+
+        // ==========================================
+        // ETAPE 1 : COUCHE DE DONNÉES (IndexedDB)
+        // ==========================================
+        let db;
+        const dbName = "ChantJustesseDB";
+        const storeName = "samples";
+
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, 1);
+
+                request.onupgradeneeded = function(event) {
+                    const database = event.target.result;
+                    if (!database.objectStoreNames.contains(storeName)) {
+                        // La clé primaire sera le numéro MIDI
+                        database.createObjectStore(storeName, { keyPath: "midi" });
+                    }
+                };
+
+                request.onsuccess = function(event) {
+                    db = event.target.result;
+                    document.getElementById('db-status').textContent = "DB Prête";
+                    document.getElementById('db-status').style.color = "green";
+                    resolve(db);
+                };
+
+                request.onerror = function(event) {
+                    console.error("Erreur IndexedDB", event.target.error);
+                    document.getElementById('db-status').textContent = "Erreur DB";
+                    document.getElementById('db-status').style.color = "red";
+                    reject(event.target.error);
+                };
+            });
+        }
+
+        // Fonction pour récupérer le statut des samples existants
+        function checkExistingSamples(midiList) {
+            return new Promise((resolve) => {
+                if(!db) return resolve({});
+                const transaction = db.transaction([storeName], "readonly");
+                const store = transaction.objectStore(storeName);
+                const request = store.getAll();
+
+                request.onsuccess = function() {
+                    const results = request.result;
+                    const statusMap = {};
+                    results.forEach(row => { statusMap[row.midi] = true; });
+                    resolve(statusMap);
+                };
+            });
+        }
+
+        // ==========================================
+        // ETAPE 2 : LOGIQUE UI DU STUDIO
+        // ==========================================
+        const noteMinSelect = document.getElementById('note-min');
+        const noteMaxSelect = document.getElementById('note-max');
+        const listContainer = document.getElementById('studio-recording-list');
+
+        function initTessitureSelectors() {
+            for (let i = 36; i <= 84; i++) {
+                noteMinSelect.appendChild(new Option(`${midiToNoteName(i)} (MIDI: ${i})`, i));
+                noteMaxSelect.appendChild(new Option(`${midiToNoteName(i)} (MIDI: ${i})`, i));
+            }
+            noteMinSelect.value = 40; // Mi2
+            noteMaxSelect.value = 60; // Do4
+            updateTessitureSummary();
+        }
+
+        async function updateTessitureSummary() {
+            const min = parseInt(noteMinSelect.value);
+            const max = parseInt(noteMaxSelect.value);
+            
+            if (min >= max) {
+                document.getElementById('tessiture-summary').textContent = "Erreur: Min >= Max";
+                listContainer.innerHTML = "";
+                return;
+            }
+
+            document.getElementById('tessiture-summary').textContent = `Kit: ${max - min + 1} notes à enregistrer.`;
+            
+            // Reconstruire la liste UI en croisant avec les données de la DB
+            buildStudioList(min, max);
+        }
+
+        async function buildStudioList(min, max) {
+            listContainer.innerHTML = "<div style='padding: 10px;'>Chargement de la base de données...</div>";
+            
+            // On vérifie en base de données quelles notes sont déjà enregistrées
+            const dbStatus = await checkExistingSamples();
+            
+            listContainer.innerHTML = "";
+            for (let i = min; i <= max; i++) {
+                const isRecorded = dbStatus[i] === true;
+                
+                const item = document.createElement('div');
+                item.className = 'studio-item';
+                
+                const labelInfo = document.createElement('div');
+                labelInfo.innerHTML = `<strong>${midiToNoteName(i)}</strong> <span style="font-size:0.8rem; color:#888;">(MIDI: ${i})</span>`;
+                
+                const actions = document.createElement('div');
+                actions.style.display = "flex";
+                actions.style.gap = "10px";
+                actions.style.alignItems = "center";
+
+                const badge = document.createElement('span');
+                badge.className = `status-badge ${isRecorded ? 'ok' : ''}`;
+                badge.textContent = isRecorded ? "✓ Sauvegardé" : "Vide";
+                badge.id = `badge-${i}`;
+
+                const btnRec = document.createElement('button');
+                btnRec.className = 'btn-small';
+                btnRec.innerHTML = "🔴 REC";
+                btnRec.onclick = () => alert("La logique de capture audio (MediaRecorder) arrive à l'étape suivante !");
+
+                actions.appendChild(badge);
+                actions.appendChild(btnRec);
+                item.appendChild(labelInfo);
+                item.appendChild(actions);
+                listContainer.appendChild(item);
+            }
+        }
+
+        // --- Initialisation globale ---
+        window.onload = async () => {
+            initTessitureSelectors();
+            noteMinSelect.addEventListener('change', updateTessitureSummary);
+            noteMaxSelect.addEventListener('change', updateTessitureSummary);
+            
+            // Démarrage de la DB avant de faire quoi que ce soit d'autre
+            await initIndexedDB();
+            updateTessitureSummary(); // Rafraîchit la liste avec le statut de la DB
+        };
+
+        // Raccourcis factices pour éviter les erreurs JS sur les autres onglets dans cette vue
+        function renderABC() {} function startPlayback(){} function stopPlayback(){}
+    </script>
+</body>
+</html>
